@@ -1,0 +1,99 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <pthread.h>
+
+#define BUFFER_SIZE 100
+
+int pipefd[2]; // Pipe for bidirectional communication
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; // Mutex for synchronization
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER; // Condition variable for synchronization: child wrote / parent read
+pthread_cond_t cond2 = PTHREAD_COND_INITIALIZER; // Condition variable for synchronization: parent wrote / child read
+
+void *child_thread(void *arg) {
+    char buf[BUFFER_SIZE]; // Buffer to read from the pipe
+
+	// Write data to the pipe
+    const char *message_to_parent = "Hello from the child process!\n";
+    ssize_t bytes_written = write(pipefd[1], message_to_parent, strlen(message_to_parent));
+    if (bytes_written == -1) {
+        perror("write");
+        exit(EXIT_FAILURE);
+    }
+    // Signal the parent process that the child thread has written
+    pthread_mutex_lock(&mutex);
+    pthread_cond_signal(&cond);
+    pthread_mutex_unlock(&mutex);
+    
+    //Wait for the parent to writte
+    pthread_mutex_lock(&mutex);
+    pthread_cond_wait(&cond2, &mutex);
+    pthread_mutex_unlock(&mutex);
+    
+    // Read data from the pipe
+    ssize_t bytes_read = read(pipefd[0], buf, sizeof(buf));
+    if (bytes_read == -1) {
+        perror("read");
+        exit(EXIT_FAILURE);
+    }
+    printf("Child process received: %s", buf);
+
+    pthread_exit(NULL);
+}
+
+int main() {
+    pthread_t tid;
+    char buf[BUFFER_SIZE]; // Buffer to read from the pipe
+
+    // Create the pipe
+    if (pipe(pipefd) == -1) {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    // Create a child thread
+    if (pthread_create(&tid, NULL, child_thread, NULL) != 0) {
+        perror("pthread_create");
+        exit(EXIT_FAILURE);
+    }
+
+    // Wait for the child thread to wrote
+    pthread_mutex_lock(&mutex);
+    pthread_cond_wait(&cond, &mutex);
+    pthread_mutex_unlock(&mutex);
+    
+    // Read data from the pipe
+    ssize_t bytes_read = read(pipefd[0], buf, sizeof(buf));
+    if (bytes_read == -1) {
+        perror("read");
+        exit(EXIT_FAILURE);
+    }
+    printf("Parent process received: %s", buf);
+    
+	// Write data to the pipe
+    const char *message_to_child = "Hello from the parent process!\n";
+    pthread_mutex_lock(&mutex);
+    ssize_t bytes_written = write(pipefd[1], message_to_child, strlen(message_to_child));
+    pthread_mutex_unlock(&mutex);
+    if (bytes_written == -1) {
+        perror("write");
+        exit(EXIT_FAILURE);
+    }
+    // Signal the child thread that the parent process has written
+    pthread_mutex_lock(&mutex);
+    pthread_cond_signal(&cond2);
+    pthread_mutex_unlock(&mutex);
+
+    // Wait for the child thread to finish
+    if (pthread_join(tid, NULL) != 0) {
+        perror("pthread_join");
+        exit(EXIT_FAILURE);
+    }
+
+    // Close the pipe
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    return 0;
+}
