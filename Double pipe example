@@ -1,0 +1,77 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/types.h>
+
+int main(void) {
+	int pipefd_p_to_c[2]; // file discriptors for the pipe parent to child
+	int pipefd_c_to_p[2]; // file discriptors for the pipe child to parent
+	pid_t pid;
+	char buff[100]; //buffer to read from the pipe
+	ssize_t bytes_written;
+	ssize_t bytes_read;
+	
+	//create the pipes
+	if (pipe(pipefd_p_to_c) == -1 || pipe(pipefd_c_to_p) == -1){
+		perror("pipe");
+		exit(EXIT_FAILURE);
+	}
+	
+	//fork a child process
+	pid = fork();
+	if (pid == -1){
+		perror("fork");
+		exit(EXIT_FAILURE);
+	}
+	if (pid == 0) { //child process
+		close(pipefd_p_to_c[1]); // close the wright end of the pipe p_to_c
+		close(pipefd_c_to_p[0]); //close the read end of the pipe c_to_p
+	
+		//read data from the pipe
+		bytes_read = read(pipefd_p_to_c[0], buff, sizeof(buff));
+		if (bytes_read == -1){
+			perror("read");
+			exit(EXIT_FAILURE);
+		}
+		printf("Child process received: %s ", buff);
+
+		//write data to the pipe
+		const char *child_message = "Hello from the child process!\n";
+		bytes_written = write(pipefd_c_to_p[1], child_message, strlen(child_message));
+		if (bytes_written == -1){
+			perror("write");
+			exit(EXIT_FAILURE);
+		}
+	
+		close(pipefd_p_to_c[0]); //close the read end of the pipe p_to_c
+		close(pipefd_c_to_p[1]); //close the write end of the pipe c_to_p
+		
+		exit(EXIT_SUCCESS);
+	} else{ //parent process
+		close(pipefd_p_to_c[0]); //close the read end of the pipe p_to_c
+		close(pipefd_c_to_p[1]); //close the write end of the pipe c_to_p
+		
+		//write data to the pipe
+		const char *message = "Hello from the parent process!\n";
+		bytes_written = write(pipefd_p_to_c[1], message, strlen(message));
+		if (bytes_written == -1){
+			perror("write");
+			exit(EXIT_FAILURE);
+		}
+		
+		//read data from the pipe
+		bytes_read = read(pipefd_c_to_p[0], buff, sizeof(buff));
+		if (bytes_read == -1){
+			perror("read");
+			exit(EXIT_FAILURE);
+		}
+		printf("Parent process received: %s ", buff);
+		close(pipefd_p_to_c[1]); // close the wright end of the pipe p_to_c
+		close(pipefd_c_to_p[0]); //close the read end of the pipe c_to_p
+		wait(NULL); //wait for the child process to finish
+		exit(EXIT_SUCCESS);
+	}
+	
+	return 0;
+}
