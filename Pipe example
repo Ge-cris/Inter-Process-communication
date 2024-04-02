@@ -22,7 +22,7 @@ int main(void) {
 		exit(EXIT_FAILURE);
 	}
 	if (pid == 0) { //child process
-		close(pipefd[1]); // close the right end of the pipe
+		close(pipefd[1]); // close the wright end of the pipe
 		//read data from the pipe
 		ssize_t bytes_read = read(pipefd[0], buff, sizeof(buff));
 		if (bytes_read == -1){
