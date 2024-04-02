@@ -11,8 +11,10 @@
 		char buff[100]; //buffer to read form the pipe
 		
 		//Read data from the pipe
+		close(pipefd[1]);
 		pthread_mutex_lock(&mutex);
 		ssize_t bytes_read = read(pipefd[0], buff, sizeof(buff));
+		close(pipefd[0]);
 		pthread_mutex_unlock(&mutex);
 		if (bytes_read == -1){
 			perror("read");
@@ -29,6 +31,10 @@
 			perror("write");
 			exit(EXIT_FAILURE);
 		}
+		//close the pipe
+		close(pipefd[0]);
+		close(pipefd[1]);
+		
 		pthread_exit(NULL);
 	}
 int main(void) {
