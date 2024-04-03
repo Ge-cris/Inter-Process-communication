@@ -1,0 +1,116 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <semaphore.h>
+#include <sys/wait.h>
+#include <string.h>
+
+#define BUFFER_SIZE 100
+
+int main() {
+    const char *semaphore_name = "/my_semaphore"; // Name of the semaphore
+    sem_t *sem; // Semaphore object
+
+    // Create or open the named semaphore
+    sem = sem_open(semaphore_name, O_CREAT, 0666, 1);
+    if (sem == SEM_FAILED) {
+        perror("sem_open");
+        exit(EXIT_FAILURE);
+    }
+
+    // Fork a child process
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    } else if (pid == 0) {
+        // Child process
+
+        // Open shared memory for communication
+        int shm_fd = shm_open("/my_shared_memory", O_RDWR | O_CREAT, 0666);
+        if (shm_fd == -1) {
+            perror("shm_open");
+            exit(EXIT_FAILURE);
+        }
+
+        // Truncate shared memory to the buffer size
+        if (ftruncate(shm_fd, BUFFER_SIZE) == -1) {
+            perror("ftruncate");
+            exit(EXIT_FAILURE);
+        }
+
+        // Map shared memory into the address space
+        char *buffer = mmap(NULL, BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        if (buffer == MAP_FAILED) {
+            perror("mmap");
+            exit(EXIT_FAILURE);
+        }
+
+        // Child process writes a message to the buffer
+        strcpy(buffer, "Hello from the child process!");
+
+        // Release the semaphore
+        if (sem_post(sem) == -1) {
+            perror("sem_post");
+            exit(EXIT_FAILURE);
+        }
+
+        exit(EXIT_SUCCESS);
+    } else {
+        // Parent process
+
+        // Wait on the semaphore
+        if (sem_wait(sem) == -1) {
+            perror("sem_wait");
+            exit(EXIT_FAILURE);
+        }
+
+        // Open shared memory for communication
+        int shm_fd = shm_open("/my_shared_memory", O_RDWR, 0666);
+        if (shm_fd == -1) {
+            perror("shm_open");
+            exit(EXIT_FAILURE);
+        }
+
+        // Map shared memory into the address space
+        char *buffer = mmap(NULL, BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        if (buffer == MAP_FAILED) {
+            perror("mmap");
+            exit(EXIT_FAILURE);
+        }
+
+        // Parent process reads and prints the message from the buffer
+        printf("Parent process received: %s\n", buffer);
+
+        // Release the semaphore
+        if (sem_post(sem) == -1) {
+            perror("sem_post");
+            exit(EXIT_FAILURE);
+        }
+
+        // Wait for the child process to finish
+        wait(NULL);
+
+        // Close and unlink the semaphore
+        if (sem_close(sem) == -1) {
+            perror("sem_close");
+            exit(EXIT_FAILURE);
+        }
+
+        if (sem_unlink(semaphore_name) == -1) {
+            perror("sem_unlink");
+            exit(EXIT_FAILURE);
+        }
+
+        // Unmap shared memory
+        if (munmap(buffer, BUFFER_SIZE) == -1) {
+            perror("munmap");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    return 0;
+}
